@@ -69,7 +69,7 @@ services:
   #
   faf-db-migrations:
     container_name: faf-db-migrations
-    image: faforever/faf-db-migrations:v114
+    image: faforever/faf-db-migrations:v119
     user: ${FAF_DB_USER}
     networks:
       - faf
@@ -82,7 +82,7 @@ services:
   #
   faf-python-server:
     container_name: faf-python-server
-    image: faforever/faf-python-server:v1.7.1
+    image: faforever/faf-python-server:v1.8.0
     user: ${FAF_PYTHON_SERVER_USER}
     networks:
       faf:
@@ -108,7 +108,7 @@ services:
   #
   faf-java-api:
     container_name: faf-java-api
-    image: faforever/faf-java-api:v2.13.0
+    image: faforever/faf-java-api:v2.15.1
     user: ${FAF_JAVA_API_USER}
     networks:
       faf:
@@ -145,7 +145,7 @@ services:
   #
   faf-website:
     container_name: faf-website
-    image: faforever/faf-website:v1.10.3
+    image: faforever/faf-website:v1.10.6
     user: ${FAF_WEBSITE_USER}
     restart: unless-stopped
     env_file: ./config/faf-website/faf-website.env
@@ -257,10 +257,13 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.faf-content.rule=Host(`content.${DOMAINNAME}`) || Host(`replay.${DOMAINNAME}`)"
       - "traefik.http.routers.faf-content.entryPoints=web-secure"
-      - "traefik.http.routers.faf-content.middlewares=redirect-replay-subdomain, test-compress@file"
+      - "traefik.http.routers.faf-content.middlewares=redirect-replay-subdomain, test-compress@file, cors"
       - "traefik.http.middlewares.redirect-replay-subdomain.redirectregex.regex=^(http|https)://replay.${DOMAINNAME}/(.*)"
       - "traefik.http.middlewares.redirect-replay-subdomain.redirectregex.replacement=$${1}://api.${DOMAINNAME}/game/$${2}/replay"
-
+      - "traefik.http.middlewares.cors.headers.accesscontrolallowmethods=GET"
+      - "traefik.http.middlewares.cors.headers.accesscontrolalloworiginlist=*"
+      - "traefik.http.middlewares.cors.headers.accesscontrolmaxage=60"
+      - "traefik.http.middlewares.cors.headers.addvaryheader=false"
   #
   # The second version of "live replay" server
   #
@@ -282,7 +285,7 @@ services:
   # The third version of the "live replay" server, in Rust.
   faf-rust-replayserver:
     container_name: faf-rust-replayserver
-    image: faforever/faf-rust-replayserver:0.2.3
+    image: faforever/faf-rust-replayserver:0.2.5
     user: ${FAF_AIO_REPLAYSERVER_USER}
     restart: unless-stopped
     volumes:
@@ -389,7 +392,7 @@ services:
   #
   faf-league-service:
     container_name: faf-league-service
-    image: faforever/faf-league-service:0.1.0
+    image: faforever/faf-league-service:0.1.2
     user: ${FAF_LEAGUE_SERVICE_USER}
     networks:
       faf:
@@ -397,6 +400,52 @@ services:
           - "faf-league-service"
     restart: unless-stopped
     env_file: ./config/faf-league-service/faf-league-service.env
+
+  #
+  # OAuth2 service
+  #
+  faf-ory-hydra:
+    container_name: faf-ory-hydra
+    image: oryd/hydra:v1.10.2
+    # We consider the Docker network safe since we are on a single host.
+    # If someone gains access to network, he has root access and can turn off the security anyway.
+    # This can be improved once the login stack was moved outside the main host.
+    command: serve all -c /hydra.yaml --dangerous-force-http
+    networks:
+      faf:
+        aliases:
+          - "faf-ory-hydra"
+    volumes:
+      - ./config/faf-ory-hydra/hydra.yaml:/hydra.yaml
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4445:4445" # only for testing
+      - "127.0.0.1:4444:4444" # only for testing
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.faf-ory-hydra.rule=Host(`hydra.${DOMAINNAME}`)"
+      - "traefik.http.routers.faf-ory-hydra.entryPoints=web-secure"
+      - "traefik.http.routers.faf-ory-hydra.tls.certresolver=default"
+      - "traefik.http.services.faf-ory-hydra.loadbalancer.server.port=4444"
+
+  #
+  # FAF User Service
+  #
+  faf-user-service:
+    container_name: faf-user-service
+    image: faforever/faf-user-service:1.0.0
+    networks:
+      faf:
+        aliases:
+          - "faf-user-service"
+    restart: unless-stopped
+    env_file: ./config/faf-user-service/faf-user-service.env
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.faf-user-service.rule=Host(`user.${DOMAINNAME}`)"
+      - "traefik.http.routers.faf-user-service.entryPoints=web-secure"
+      - "traefik.http.routers.faf-user-service.tls.certresolver=default"
+      - "traefik.http.services.faf-user-service.loadbalancer.server.port=8080"
 
 networks:
   faf:
